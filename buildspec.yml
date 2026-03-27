@@ -1,0 +1,50 @@
+# ============================================================
+# buildspec.yml - Coloque este arquivo na raiz do seu repositório
+# Executado pelo CodeBuild no stage de Build
+# ============================================================
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "=== Iniciando pre-build ==="
+      - echo "Autenticando no ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - echo "Tag da imagem: $IMAGE_TAG"
+
+  build:
+    commands:
+      - echo "=== Iniciando build ==="
+      - echo "Rodando testes..."
+      - |
+        if [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt
+          python -m pytest tests/ -v --tb=short || exit 1
+        fi
+      - echo "Construindo imagem Docker..."
+      - docker build -t $ECR_REPOSITORY_URI:latest .
+      - docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:$IMAGE_TAG
+
+  post_build:
+    commands:
+      - echo "=== Iniciando post-build ==="
+      - echo "Fazendo push da imagem para o ECR..."
+      - docker push $ECR_REPOSITORY_URI:latest
+      - docker push $ECR_REPOSITORY_URI:$IMAGE_TAG
+      - echo "Push concluído!"
+      # Salva a tag para o stage de deploy
+      - echo $IMAGE_TAG > imageTag.txt
+      - echo "Build concluído com sucesso!"
+
+artifacts:
+  files:
+    - imageTag.txt
+    - "k8s/**/*"    # Manifestos Kubernetes para o deploy
+  discard-paths: no
+
+cache:
+  paths:
+    - "/root/.cache/pip/**/*"
+    - "/root/.docker/**/*"
