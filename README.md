@@ -1,11 +1,5 @@
 # cicd_python_aws_ecs
 
-Aqui está um arquivo `README.md` completo e profissional, estruturado para o projeto que definimos. Ele está em **Inglês**, pois é o padrão da indústria para repositórios de código e infraestrutura, facilitando a colaboração e integração com ferramentas globais.
-
-Caso prefira em Português, posso traduzir facilmente.
-
----
-
 # 🐍 Python App on AWS ECS Fargate (IaC)
 
 Infrastructure as Code (IaC) repository for deploying a containerized Python application on AWS ECS Fargate with a managed PostgreSQL database (RDS). This project uses **Terraform** for infrastructure provisioning and **GitHub Actions** for CI/CD pipelines with OIDC authentication.
