@@ -3,8 +3,9 @@ Integration smoke tests — run against a live environment.
 Requires --base-url pytest option or BASE_URL env var.
 """
 import os
-import pytest
+
 import httpx
+import pytest
 
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")

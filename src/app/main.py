@@ -19,7 +19,9 @@ PORT = int(os.getenv("PORT", "8000"))
 
 @app.get("/health")
 def health() -> JSONResponse:
-    return JSONResponse({"status": "healthy", "environment": ENVIRONMENT, "timestamp": datetime.utcnow().isoformat()})
+    return JSONResponse(
+        {"status": "healthy", "environment": ENVIRONMENT, "timestamp": datetime.utcnow().isoformat()}
+    )
 
 
 @app.get("/")
