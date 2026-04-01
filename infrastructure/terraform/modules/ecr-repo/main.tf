@@ -1,6 +1,6 @@
 resource "aws_ecr_repository" "this" {
   name                 = "${var.project_name}-${var.repository_name}"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
   force_delete         = var.environment != "prod"
 
   image_scanning_configuration {
