@@ -1,12 +1,11 @@
 """
 FastAPI application — ECS Fargate deployment target.
 """
-import os
 import logging
-import json
+import os
 from datetime import datetime
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
