@@ -1,0 +1,144 @@
+name: Nightly Drift Detection
+
+on:
+  schedule:
+    - cron: "0 2 * * *"   # 02:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to check (dev|staging|prod|all)
+        default: all
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_VERSION: "1.6.0"
+
+jobs:
+  detect-drift:
+    name: Terraform Plan — ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    strategy:
+      matrix:
+        environment: [dev, staging, prod]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-ReadOnly
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        run: cd infrastructure/terraform && terraform init
+
+      - name: Terraform Plan (drift check)
+        id: plan
+        run: |
+          cd infrastructure/terraform
+          terraform workspace select ${{ matrix.environment }} || \
+            terraform workspace new ${{ matrix.environment }}
+          set +e
+          terraform plan \
+            -var-file=environments/${{ matrix.environment }}.tfvars \
+            -detailed-exitcode \
+            -no-color 2>&1 | tee /tmp/drift-${{ matrix.environment }}.txt
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          # 0 = no changes, 1 = error, 2 = changes (drift)
+          if [ $EXIT_CODE -eq 2 ]; then
+            echo "DRIFT DETECTED in ${{ matrix.environment }}" >&2
+          fi
+
+      - name: Emit CloudWatch metric on drift
+        if: steps.plan.outputs.exit_code == '2'
+        run: |
+          aws cloudwatch put-metric-data \
+            --namespace "Claude/Agent" \
+            --metric-name "DriftDetected" \
+            --value 1 \
+            --dimensions Environment=${{ matrix.environment }}
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report-${{ matrix.environment }}
+          path: /tmp/drift-${{ matrix.environment }}.txt
+          retention-days: 30
+
+      - name: Post drift summary
+        if: steps.plan.outputs.exit_code == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('/tmp/drift-${{ matrix.environment }}.txt', 'utf8');
+            const truncated = plan.length > 3000 ? plan.slice(0, 3000) + '\n...(truncated)' : plan;
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[Drift] Infrastructure drift detected in ${{ matrix.environment }}`,
+              body: `## Terraform Drift Detected\n\nEnvironment: \`${{ matrix.environment }}\`\n\n\`\`\`hcl\n${truncated}\n\`\`\``,
+              labels: ['drift', 'infrastructure', '${{ matrix.environment }}']
+            })
+
+  rotate-secrets:
+    name: Nightly Secret Rotation
+    runs-on: ubuntu-latest
+    needs: detect-drift
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-SecretsRotation
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Rotate non-critical secrets (staging)
+        run: |
+          aws secretsmanager list-secrets \
+            --filter Key=name,Values=/app/staging/ \
+            --query "SecretList[?!contains(Name, 'rds')].Name" \
+            --output text | tr '\t' '\n' | while read secret; do
+              aws secretsmanager rotate-secret --secret-id "$secret" || true
+            done
+
+  archive-ecr:
+    name: Archive Old ECR Images
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Delete untagged images older than 30 days
+        run: |
+          REPO="cicd-python-ecs"
+          CUTOFF=$(date -d '30 days ago' +%s)
+          aws ecr describe-images --repository-name "$REPO" \
+            --query 'imageDetails[?imagePushedAt < `'"$CUTOFF"'`].imageDigest' \
+            --output text | tr '\t' '\n' | while read digest; do
+              aws ecr batch-delete-image \
+                --repository-name "$REPO" \
+                --image-ids imageDigest="$digest" || true
+            done

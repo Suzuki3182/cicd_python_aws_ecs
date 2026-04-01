@@ -1,0 +1,75 @@
+---
+# STIG/NIST 800-53 host hardening — applied to ECS container instances
+- name: Harden ECS hosts (NIST 800-53 / STIG)
+  hosts: ecs_hosts
+  become: yes
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+    - name: Disable unused services (AC-17, CM-7)
+      service:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - telnet
+        - rsh
+        - rlogin
+      ignore_errors: yes
+
+    - name: Set password policies (IA-5)
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: "^{{ item.key }}"
+        line: "{{ item.key }} = {{ item.value }}"
+      loop:
+        - { key: minlen,  value: 15 }
+        - { key: dcredit, value: -1 }
+        - { key: ucredit, value: -1 }
+        - { key: lcredit, value: -1 }
+        - { key: ocredit, value: -1 }
+
+    - name: Configure audit daemon (AU-2, AU-12)
+      template:
+        src: templates/auditd.rules.j2
+        dest: /etc/audit/rules.d/stig.rules
+      notify: restart auditd
+
+    - name: Restrict SSH (AC-17)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^{{ item.key }}"
+        line: "{{ item.key }} {{ item.value }}"
+      loop:
+        - { key: PermitRootLogin,           value: "no" }
+        - { key: PasswordAuthentication,    value: "no" }
+        - { key: X11Forwarding,             value: "no" }
+        - { key: MaxAuthTries,              value: "3" }
+        - { key: ClientAliveInterval,       value: "300" }
+        - { key: ClientAliveCountMax,       value: "0" }
+        - { key: Protocol,                  value: "2" }
+      notify: restart sshd
+
+    - name: Enable automatic security updates (SI-2)
+      yum:
+        name: yum-cron
+        state: present
+
+    - name: Configure IMDSv2 enforcement (IA-3)
+      shell: |
+        TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
+          -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+        aws ec2 modify-instance-metadata-options \
+          --instance-id $(curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+            http://169.254.169.254/latest/meta-data/instance-id) \
+          --http-tokens required \
+          --http-endpoint enabled
+      ignore_errors: yes
+
+  handlers:
+    - name: restart auditd
+      service: name=auditd state=restarted
+
+    - name: restart sshd
+      service: name=sshd state=restarted

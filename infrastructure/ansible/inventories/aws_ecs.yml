@@ -1,0 +1,21 @@
+---
+plugin: aws_ec2
+regions:
+  - us-east-1
+
+filters:
+  tag:ManagedBy: Terraform
+  tag:Project: cicd-python-ecs
+  instance-state-name: running
+
+keyed_groups:
+  - key: tags.Environment
+    prefix: env
+  - key: tags.Role
+    prefix: role
+
+hostnames:
+  - private-ip-address
+
+compose:
+  ansible_host: private_ip_address

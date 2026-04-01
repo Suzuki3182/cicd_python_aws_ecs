@@ -1,0 +1,152 @@
+name: CI — Lint → Test → Build → Scan
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  AWS_REGION: us-east-1
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install lint tools
+        run: pip install ruff black isort mypy
+
+      - name: Run linters
+        run: make lint
+
+  test:
+    name: Unit Tests + Coverage
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r src/app/requirements.txt -r src/app/requirements-dev.txt
+
+      - name: Run tests
+        run: make test
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: reports/coverage-unit.xml
+
+  build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "tag=sha-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build -t app:${{ steps.tag.outputs.tag }} src/
+          docker save app:${{ steps.tag.outputs.tag }} | gzip > /tmp/image.tar.gz
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp/image.tar.gz
+          retention-days: 1
+
+  scan:
+    name: Security Scan (SAST + IaC + Container)
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+
+      - name: Load Docker image
+        run: docker load < /tmp/image.tar.gz
+
+      - name: Trivy container scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: app:sha-${{ github.sha }}
+          format: sarif
+          output: reports/trivy.sarif
+          severity: CRITICAL,HIGH
+          exit-code: 1
+
+      - name: tfsec IaC scan
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: infrastructure/terraform
+          minimum_severity: HIGH
+          format: json
+          out: reports/tfsec.json
+
+      - name: Checkov IaC scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infrastructure/terraform
+          framework: terraform
+          output_format: json
+          output_file_path: reports/checkov.json
+          soft_fail: false
+
+      - name: Bandit SAST
+        run: |
+          pip install bandit
+          bandit -r src/app/ -f json -o reports/bandit.json -ll
+        continue-on-error: false
+
+      - name: Upload SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: reports/trivy.sarif
+
+  comment-results:
+    name: PR Comment
+    runs-on: ubuntu-latest
+    needs: [test, scan]
+    if: github.event_name == 'pull_request'
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Post scan summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## CI Results\n\n✅ Lint passed\n✅ Tests passed\n✅ Security scan passed\n\nImage tag: \`sha-${context.sha.substring(0, 7)}\``
+            })

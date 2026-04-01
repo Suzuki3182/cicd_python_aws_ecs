@@ -1,13 +1,47 @@
 # Terraform
-.terraform/
-.terraform.lock.hcl
+**/.terraform/
+**/.terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
 *.tfstate.*.backup
-terraform.tfvars
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
 crash.log
 crash.*.log
+*.tfplan
+
+# Environment-specific tfvars with secrets (keep environments/ tracked)
+terraform.tfvars
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Reports (generated artifacts)
+reports/
+
+# Docker
+*.tar.gz
+
+# Secrets
+.env
+.env.*
+.secrets.baseline
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

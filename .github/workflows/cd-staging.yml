@@ -1,0 +1,108 @@
+name: CD — Staging (Fully Automated)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to deploy (default: current sha)
+        required: false
+
+env:
+  AWS_REGION: us-east-1
+  ECS_CLUSTER: cicd-python-ecs-staging
+  TERRAFORM_VERSION: "1.6.0"
+  ENVIRONMENT: staging
+
+jobs:
+  deploy-staging:
+    name: Build → Push → Terraform → Validate
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # OIDC for AWS auth
+      contents: read
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="sha-$(git rev-parse --short HEAD)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          docker build -t $ECR_REGISTRY/cicd-python-ecs:$IMAGE_TAG src/
+          docker push $ECR_REGISTRY/cicd-python-ecs:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/cicd-python-ecs:$IMAGE_TAG \
+                     $ECR_REGISTRY/cicd-python-ecs:latest-staging
+          docker push $ECR_REGISTRY/cicd-python-ecs:latest-staging
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        run: |
+          cd infrastructure/terraform
+          terraform init
+
+      - name: Terraform Apply (staging)
+        run: |
+          cd infrastructure/terraform
+          terraform workspace select ${{ env.ENVIRONMENT }} || \
+            terraform workspace new ${{ env.ENVIRONMENT }}
+          terraform apply \
+            -var-file=environments/${{ env.ENVIRONMENT }}.tfvars \
+            -var="image_tag=${{ steps.tag.outputs.tag }}" \
+            -auto-approve
+
+      - name: Wait for ECS service stable
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services cicd-python-ecs-${{ env.ENVIRONMENT }}
+
+      - name: Post-deploy smoke test
+        run: |
+          ./scripts/smoke-test.sh \
+            --env=${{ env.ENVIRONMENT }} \
+            --endpoint=${{ vars.STAGING_URL }}/health \
+            --timeout=300
+
+      - name: Notify success
+        if: success()
+        run: |
+          echo "## Staging Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`${{ steps.tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Environment: staging" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: ${{ vars.STAGING_URL }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify failure + auto-rollback
+        if: failure()
+        run: |
+          echo "Deployment failed — triggering auto-rollback" >&2
+          ./scripts/auto-rollback.sh \
+            --env=${{ env.ENVIRONMENT }} \
+            --cluster=${{ env.ECS_CLUSTER }}

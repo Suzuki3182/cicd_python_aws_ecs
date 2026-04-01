@@ -1,0 +1,19 @@
+aws_region   = "us-east-1"
+project_name = "cicd-python-ecs"
+environment  = "staging"
+vpc_cidr     = "10.1.0.0/16"
+
+single_nat_gateway = true
+
+ecs_task_cpu              = 512
+ecs_task_memory           = 1024
+ecs_service_desired_count = 2
+ecs_service_min_count     = 1
+ecs_service_max_count     = 5
+
+aurora_instance_class  = "db.t3.medium"
+aurora_instances_count = 1
+
+s3_bucket_name      = "cicd-python-ecs-staging-artifacts"
+ecr_repository_name = "cicd-python-ecs"
+image_tag           = "latest"

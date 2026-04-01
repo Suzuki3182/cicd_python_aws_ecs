@@ -1,0 +1,4 @@
+---
+project_name: cicd-python-ecs
+aws_region: us-east-1
+environment: "{{ lookup('env', 'ENVIRONMENT') | default('dev') }}"

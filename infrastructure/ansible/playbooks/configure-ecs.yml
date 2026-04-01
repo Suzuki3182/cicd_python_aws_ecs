@@ -1,0 +1,50 @@
+---
+- name: Configure ECS cluster post-provisioning
+  hosts: ecs_hosts
+  become: yes
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+    - name: Ensure Docker daemon is configured for log rotation
+      copy:
+        dest: /etc/docker/daemon.json
+        content: |
+          {
+            "log-driver": "awslogs",
+            "log-opts": {
+              "awslogs-group": "/ecs/{{ project_name }}-{{ environment }}",
+              "awslogs-region": "{{ aws_region }}"
+            },
+            "max-concurrent-downloads": 3,
+            "max-concurrent-uploads": 5
+          }
+      notify: restart docker
+
+    - name: Enable SSM agent
+      service:
+        name: amazon-ssm-agent
+        state: started
+        enabled: yes
+
+    - name: Install CloudWatch agent
+      yum:
+        name: amazon-cloudwatch-agent
+        state: present
+
+    - name: Configure CloudWatch agent
+      template:
+        src: templates/cloudwatch-agent.json.j2
+        dest: /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+      notify: restart cloudwatch-agent
+
+  handlers:
+    - name: restart docker
+      service:
+        name: docker
+        state: restarted
+
+    - name: restart cloudwatch-agent
+      service:
+        name: amazon-cloudwatch-agent
+        state: restarted
