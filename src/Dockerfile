@@ -1,10 +1,13 @@
-FROM python:3.12-slim AS base
+FROM python:3.12-slim-bookworm AS base
 
 # Security: run as non-root
 RUN groupadd --gid 1001 app && \
     useradd --uid 1001 --gid app --shell /bin/bash --create-home app
 
 WORKDIR /app
+
+# Apply OS security patches
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies first (layer cache)
 COPY app/requirements.txt .
