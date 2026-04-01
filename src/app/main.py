@@ -1,6 +1,7 @@
 """
 FastAPI application — ECS Fargate deployment target.
 """
+
 import logging
 import os
 from datetime import datetime
