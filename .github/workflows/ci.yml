@@ -121,9 +121,8 @@ jobs:
         uses: aquasecurity/tfsec-action@v1.0.0
         with:
           working_directory: infrastructure/terraform
-          minimum_severity: HIGH
           format: json
-          out: reports/tfsec.json
+          additional_args: --minimum-severity HIGH --out reports/tfsec.json
 
       - name: Checkov IaC scan
         uses: bridgecrewio/checkov-action@master
