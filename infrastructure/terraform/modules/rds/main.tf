@@ -82,8 +82,8 @@ resource "aws_security_group" "rds" {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+    cidr_blocks = [var.vpc_cidr]
+    description = "Allow outbound within VPC only"
   }
 
   tags = {
@@ -158,6 +158,7 @@ resource "aws_rds_cluster_instance" "main" {
   # Performance Insights para monitoramento detalhado de queries
   performance_insights_enabled          = true
   performance_insights_retention_period = 7
+  performance_insights_kms_key_id       = aws_kms_key.rds.arn
 
   # Monitoramento avançado (métricas do SO)
   monitoring_interval = 60

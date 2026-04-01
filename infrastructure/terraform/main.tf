@@ -32,6 +32,7 @@ module "rds" {
   project_name          = var.project_name
   environment           = var.environment
   vpc_id                = module.vpc.vpc_id
+  vpc_cidr              = module.vpc.vpc_cidr_block
   private_subnet_ids    = module.vpc.private_subnet_ids
   db_name               = var.db_name
   master_username       = var.db_master_username
@@ -57,6 +58,7 @@ module "ecs" {
   project_name       = var.project_name
   environment        = var.environment
   vpc_id             = module.vpc.vpc_id
+  vpc_cidr           = module.vpc.vpc_cidr_block
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
   ecr_image_uri      = "${module.ecr.repository_url}:${var.image_tag}"

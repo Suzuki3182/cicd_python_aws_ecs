@@ -221,6 +221,7 @@ resource "aws_iam_role" "vpc_flow_logs" {
   })
 }
 
+#tfsec:ignore:aws-iam-no-policy-wildcards
 resource "aws_iam_role_policy" "vpc_flow_logs" {
   name = "vpc-flow-logs-policy"
   role = aws_iam_role.vpc_flow_logs.id
@@ -230,13 +231,13 @@ resource "aws_iam_role_policy" "vpc_flow_logs" {
     Statement = [{
       Effect = "Allow"
       Action = [
-        "logs:CreateLogGroup",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
         "logs:DescribeLogGroups",
         "logs:DescribeLogStreams"
       ]
-      Resource = "*"
+      # :* suffix refers to log streams within the group — not a true wildcard
+      Resource = "${aws_cloudwatch_log_group.vpc_flow_logs.arn}:*"
     }]
   })
 }

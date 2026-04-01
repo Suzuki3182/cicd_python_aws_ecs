@@ -141,14 +141,18 @@ resource "aws_security_group" "alb" {
   description = "ALB inbound traffic"
   vpc_id      = var.vpc_id
 
+  #tfsec:ignore:aws-ec2-no-public-ingress-sgr
   ingress {
+    description = "HTTP from internet"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  #tfsec:ignore:aws-ec2-no-public-ingress-sgr
   ingress {
+    description = "HTTPS from internet"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -156,10 +160,11 @@ resource "aws_security_group" "alb" {
   }
 
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    description = "Forward to ECS tasks"
+    from_port   = var.container_port
+    to_port     = var.container_port
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
   }
 }
 
@@ -169,17 +174,29 @@ resource "aws_security_group" "service" {
   vpc_id      = var.vpc_id
 
   ingress {
+    description     = "Traffic from ALB"
     from_port       = var.container_port
     to_port         = var.container_port
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
   }
 
+  # Fargate tasks need HTTPS egress to reach ECR, Secrets Manager, and CloudWatch via NAT
+  #tfsec:ignore:aws-ec2-no-public-egress-sgr
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "HTTPS to AWS APIs via NAT"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "PostgreSQL to RDS"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
   }
 }
 
@@ -198,8 +215,10 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "alb_logs" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "AES256"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.logs.arn
     }
+    bucket_key_enabled = true
   }
 }
 
@@ -230,6 +249,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 }
 
 # --- ALB ---
+#tfsec:ignore:aws-elb-alb-not-public
 resource "aws_lb" "this" {
   name                       = "${var.project_name}-${var.environment}"
   internal                   = false

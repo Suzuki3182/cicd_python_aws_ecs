@@ -10,6 +10,11 @@ variable "vpc_id" {
   type = string
 }
 
+variable "vpc_cidr" {
+  type        = string
+  description = "VPC CIDR block — used to restrict SG egress to within the VPC"
+}
+
 variable "private_subnet_ids" {
   type = list(string)
 }
