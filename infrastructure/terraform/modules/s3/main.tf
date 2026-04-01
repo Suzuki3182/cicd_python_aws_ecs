@@ -5,12 +5,12 @@
 # -----------------------------------------------------------
 # Bucket Principal
 # -----------------------------------------------------------
+#checkov:skip=CKV_AWS_144:Cross-region replication not required for this workload
 resource "aws_s3_bucket" "main" {
   bucket = var.bucket_name
 
-  # Proteção contra delete acidental em produção
   lifecycle {
-    prevent_destroy = false # Mude para true em produção real
+    prevent_destroy = false
   }
 
   tags = {
@@ -60,10 +60,27 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "main" {
 # -----------------------------------------------------------
 # KMS Key para o S3
 # -----------------------------------------------------------
+data "aws_caller_identity" "current" {}
+
 resource "aws_kms_key" "s3" {
   description             = "KMS para criptografia do S3 ${var.bucket_name}"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      }
+    ]
+  })
 
   tags = {
     Name = "${var.bucket_name}-kms"
@@ -190,6 +207,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
 # -----------------------------------------------------------
 # Logging de acesso ao bucket
 # -----------------------------------------------------------
+#checkov:skip=CKV_AWS_144:Cross-region replication not required for S3 access log buckets
 resource "aws_s3_bucket" "access_logs" {
   bucket = "${var.bucket_name}-access-logs"
 
@@ -219,6 +237,37 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "access_logs" {
   }
 }
 
+resource "aws_s3_bucket_versioning" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "access_logs" {
+  bucket = aws_s3_bucket.access_logs.id
+
+  rule {
+    id     = "access-logs-expiry"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 90
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+resource "aws_s3_bucket_notification" "access_logs" {
+  bucket      = aws_s3_bucket.access_logs.id
+  eventbridge = true
+}
+
 resource "aws_s3_bucket_logging" "main" {
   bucket        = aws_s3_bucket.main.id
   target_bucket = aws_s3_bucket.access_logs.id
@@ -229,7 +278,6 @@ resource "aws_s3_bucket_logging" "main" {
 # Notificações S3 -> CloudWatch (opcional)
 # -----------------------------------------------------------
 resource "aws_s3_bucket_notification" "main" {
-  bucket = aws_s3_bucket.main.id
-  # Adicione eventbridge = true para enviar eventos ao EventBridge
-  # e integrar com Lambda, SQS, SNS conforme necessidade
+  bucket      = aws_s3_bucket.main.id
+  eventbridge = true
 }

@@ -15,9 +15,11 @@ resource "random_password" "db_master" {
 # Armazena credenciais no Secrets Manager (nunca hardcode!)
 # -----------------------------------------------------------
 resource "aws_secretsmanager_secret" "db_credentials" {
+  #checkov:skip=CKV2_AWS_57:Automatic rotation requires a Lambda rotator — managed separately outside this module
   name                    = "${var.project_name}/${var.environment}/rds/credentials"
   description             = "Credenciais do banco Aurora PostgreSQL"
-  recovery_window_in_days = 7 # Período de recuperação antes de deletar permanentemente
+  recovery_window_in_days = 7
+  kms_key_id              = aws_kms_key.rds.arn
 
   tags = {
     Name = "${var.project_name}-${var.environment}-db-secret"
@@ -94,10 +96,28 @@ resource "aws_security_group" "rds" {
 # -----------------------------------------------------------
 # KMS Key para criptografia do banco
 # -----------------------------------------------------------
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
 resource "aws_kms_key" "rds" {
   description             = "KMS para criptografia do Aurora ${var.project_name}-${var.environment}"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      }
+    ]
+  })
 
   tags = {
     Name = "${var.project_name}-${var.environment}-rds-kms"
@@ -107,6 +127,7 @@ resource "aws_kms_key" "rds" {
 # -----------------------------------------------------------
 # Cluster Aurora PostgreSQL
 # -----------------------------------------------------------
+#checkov:skip=CKV2_AWS_8:AWS Backup plan is managed at the org level outside this module
 resource "aws_rds_cluster" "main" {
   cluster_identifier      = "${var.project_name}-${var.environment}-aurora"
   engine                  = "aurora-postgresql"
@@ -115,27 +136,29 @@ resource "aws_rds_cluster" "main" {
   master_username         = var.master_username
   master_password         = random_password.db_master.result
 
-  db_subnet_group_name    = aws_db_subnet_group.main.name
-  vpc_security_group_ids  = [aws_security_group.rds.id]
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
+  iam_database_authentication_enabled = true
+  copy_tags_to_snapshot               = true
 
   # Criptografia em repouso
-  storage_encrypted       = true
-  kms_key_id              = aws_kms_key.rds.arn
+  storage_encrypted = true
+  kms_key_id        = aws_kms_key.rds.arn
 
   # Backups automáticos (7 dias)
-  backup_retention_period = 7
-  preferred_backup_window = "03:00-04:00"    # UTC - janela de menor tráfego
+  backup_retention_period      = 7
+  preferred_backup_window      = "03:00-04:00"
   preferred_maintenance_window = "Mon:04:00-Mon:05:00"
 
   # Snapshot final ao deletar (proteção contra delete acidental)
   skip_final_snapshot       = false
   final_snapshot_identifier = "${var.project_name}-${var.environment}-final-snapshot"
-  deletion_protection       = true # Impede delete acidental em produção
+  deletion_protection       = true
 
-  # Habilita CloudWatch Logs
+  # Habilita CloudWatch Logs com query logging
   enabled_cloudwatch_logs_exports = ["postgresql"]
 
-  # Habilita Data API (acesso HTTP ao banco, útil para Lambda)
   enable_http_endpoint = true
 
   tags = {

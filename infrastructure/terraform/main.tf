@@ -62,6 +62,7 @@ module "ecs" {
   private_subnet_ids = module.vpc.private_subnet_ids
   public_subnet_ids  = module.vpc.public_subnet_ids
   ecr_image_uri      = "${module.ecr.repository_url}:${var.image_tag}"
+  certificate_arn    = var.certificate_arn
   container_port     = var.container_port
   task_cpu           = var.ecs_task_cpu
   task_memory        = var.ecs_task_memory

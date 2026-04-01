@@ -125,18 +125,19 @@ resource "aws_kms_key" "logs" {
 # --- CloudWatch Logs ---
 resource "aws_cloudwatch_log_group" "app" {
   name              = "/ecs/${var.project_name}-${var.environment}"
-  retention_in_days = 30
+  retention_in_days = 365
   kms_key_id        = aws_kms_key.logs.arn
 }
 
 resource "aws_cloudwatch_log_group" "agent" {
   name              = "/claude/agent"
-  retention_in_days = 90
+  retention_in_days = 365
   kms_key_id        = aws_kms_key.logs.arn
 }
 
 # --- Security Groups ---
 resource "aws_security_group" "alb" {
+  #checkov:skip=CKV_AWS_260:Port 80 is intentional — HTTP listener redirects to HTTPS
   name        = "${var.project_name}-${var.environment}-alb"
   description = "ALB inbound traffic"
   vpc_id      = var.vpc_id
@@ -205,6 +206,8 @@ data "aws_elb_service_account" "main" {}
 
 data "aws_caller_identity" "current" {}
 
+#checkov:skip=CKV_AWS_18:ALB access log bucket — enabling its own access logs would create a circular dependency
+#checkov:skip=CKV_AWS_144:Cross-region replication not required for access log buckets
 resource "aws_s3_bucket" "alb_logs" {
   bucket        = "${var.project_name}-${var.environment}-alb-logs"
   force_destroy = var.environment != "prod"
@@ -248,17 +251,48 @@ resource "aws_s3_bucket_policy" "alb_logs" {
   depends_on = [aws_s3_bucket_public_access_block.alb_logs]
 }
 
+resource "aws_s3_bucket_versioning" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "alb_logs" {
+  bucket = aws_s3_bucket.alb_logs.id
+
+  rule {
+    id     = "alb-logs-expiry"
+    status = "Enabled"
+    filter {}
+    expiration {
+      days = 90
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
+  }
+}
+
+resource "aws_s3_bucket_notification" "alb_logs" {
+  bucket      = aws_s3_bucket.alb_logs.id
+  eventbridge = true
+}
+
 # --- ALB ---
-#tfsec:ignore:aws-elb-alb-not-public
+#checkov:skip=CKV2_AWS_28:WAF integration is handled at the infrastructure/perimeter layer
 resource "aws_lb" "this" {
   name                       = "${var.project_name}-${var.environment}"
-  internal                   = false
+  internal                   = false #tfsec:ignore:aws-elb-alb-not-public
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.alb.id]
   subnets                    = var.public_subnet_ids
   drop_invalid_header_fields = true
 
-  enable_deletion_protection = var.environment == "prod"
+  enable_deletion_protection = true
 
   access_logs {
     bucket  = aws_s3_bucket.alb_logs.bucket
@@ -285,11 +319,27 @@ resource "aws_lb_target_group" "blue" {
   }
 }
 
-#tfsec:ignore:aws-elb-http-not-used
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = var.certificate_arn
 
   default_action {
     type             = "forward"

@@ -57,6 +57,11 @@ variable "max_count" {
   default = 10
 }
 
+variable "certificate_arn" {
+  type        = string
+  description = "ACM certificate ARN for the HTTPS listener"
+}
+
 variable "db_secret_arn" {
   type = string
 }

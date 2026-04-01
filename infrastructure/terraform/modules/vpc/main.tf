@@ -7,14 +7,19 @@
 # -----------------------------------------------------------
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true # Necessário para o EKS
+  enable_dns_hostnames = true
   enable_dns_support   = true
 
   tags = {
     Name = "${var.project_name}-${var.environment}-vpc"
-    # Tags necessárias para o EKS descobrir as subnets automaticamente
     "kubernetes.io/cluster/${var.project_name}-${var.environment}" = "shared"
   }
+}
+
+# Restrict the default security group — CKV2_AWS_12
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.main.id
+  # No ingress or egress rules — effectively denies all traffic
 }
 
 # -----------------------------------------------------------
@@ -198,7 +203,7 @@ resource "aws_kms_key" "flow_logs" {
 # -----------------------------------------------------------
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   name              = "/aws/vpc/${var.project_name}-${var.environment}/flow-logs"
-  retention_in_days = 30
+  retention_in_days = 365
   kms_key_id        = aws_kms_key.flow_logs.arn
 
   tags = {

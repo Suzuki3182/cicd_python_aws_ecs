@@ -17,3 +17,6 @@ aurora_instances_count = 1
 s3_bucket_name      = "cicd-python-ecs-dev-artifacts"
 ecr_repository_name = "cicd-python-ecs"
 image_tag           = "latest"
+
+# Set to your ACM certificate ARN before applying
+certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID"

@@ -96,6 +96,11 @@ variable "container_port" {
   default     = 8000
 }
 
+variable "certificate_arn" {
+  description = "ACM certificate ARN for the ALB HTTPS listener"
+  type        = string
+}
+
 variable "image_tag" {
   description = "Docker image tag to deploy"
   type        = string
