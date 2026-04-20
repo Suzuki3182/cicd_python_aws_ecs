@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cicd-python-ecs
+  namespace: app
+  labels:
+    app: cicd-python-ecs
+spec:
+  replicas: REPLICAS_PLACEHOLDER
+  selector:
+    matchLabels:
+      app: cicd-python-ecs
+  template:
+    metadata:
+      labels:
+        app: cicd-python-ecs
+    spec:
+      serviceAccountName: bedrock-client
+      containers:
+        - name: app
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10

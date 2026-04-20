@@ -20,17 +20,17 @@ output "ecr_repository_url" {
 
 output "ecs_cluster_name" {
   description = "ECS cluster name"
-  value       = module.ecs.cluster_name
+  value       = var.enable_ecs ? module.ecs[0].cluster_name : null
 }
 
 output "ecs_service_name" {
   description = "ECS service name"
-  value       = module.ecs.service_name
+  value       = var.enable_ecs ? module.ecs[0].service_name : null
 }
 
 output "alb_dns_name" {
   description = "Application Load Balancer DNS name"
-  value       = module.ecs.alb_dns_name
+  value       = var.enable_ecs ? module.ecs[0].alb_dns_name : null
 }
 
 output "rds_cluster_endpoint" {
@@ -51,5 +51,25 @@ output "s3_bucket_name" {
 
 output "cloudwatch_dashboard_url" {
   description = "CloudWatch dashboard URL"
-  value       = module.monitoring.dashboard_url
+  value       = var.enable_ecs ? module.monitoring[0].dashboard_url : null
+}
+
+output "eks_cluster_name" {
+  description = "EKS cluster name"
+  value       = var.enable_eks ? module.eks[0].cluster_name : null
+}
+
+output "eks_cluster_endpoint" {
+  description = "EKS control plane endpoint"
+  value       = var.enable_eks ? module.eks[0].cluster_endpoint : null
+}
+
+output "eks_oidc_provider_arn" {
+  description = "EKS OIDC provider ARN"
+  value       = var.enable_eks ? module.eks[0].oidc_provider_arn : null
+}
+
+output "bedrock_irsa_role_arn" {
+  description = "IAM role ARN for Bedrock IRSA"
+  value       = var.enable_eks ? module.eks[0].bedrock_irsa_role_arn : null
 }

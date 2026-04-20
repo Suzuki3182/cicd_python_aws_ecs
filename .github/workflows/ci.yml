@@ -67,17 +67,21 @@ jobs:
           test -f .claude/skills/rotate-secrets/SKILL.md
           test -f .claude/skills/drift-detection/SKILL.md
 
-      - name: Verify deploy-ecs automation parity
+      - name: Verify deploy automation parity
         run: |
           grep -q "terraform apply" .github/workflows/cd-staging.yml
-          grep -q "aws ecs wait services-stable" .github/workflows/cd-staging.yml
-          grep -q "scripts/smoke-test.sh" .github/workflows/cd-staging.yml
-          grep -q "scripts/auto-rollback.sh" .github/workflows/cd-staging.yml
+          grep -q "aws eks update-kubeconfig" .github/workflows/cd-staging.yml
+          grep -q "kubectl rollout status" .github/workflows/cd-staging.yml
+          grep -q "Canary rollout" .github/workflows/cd-staging.yml
+          grep -q "scripts/smoke-test-eks.sh" .github/workflows/cd-staging.yml
+          grep -q "kubectl rollout undo" .github/workflows/cd-staging.yml
 
           grep -q "terraform apply" .github/workflows/cd-production.yml
-          grep -q "aws ecs wait services-stable" .github/workflows/cd-production.yml
-          grep -q "scripts/smoke-test.sh" .github/workflows/cd-production.yml
-          grep -q "scripts/auto-rollback.sh" .github/workflows/cd-production.yml
+          grep -q "aws eks update-kubeconfig" .github/workflows/cd-production.yml
+          grep -q "kubectl rollout status" .github/workflows/cd-production.yml
+          grep -q "Canary rollout" .github/workflows/cd-production.yml
+          grep -q "scripts/smoke-test-eks.sh" .github/workflows/cd-production.yml
+          grep -q "kubectl rollout undo" .github/workflows/cd-production.yml
 
       - name: Verify scan-security automation parity
         run: |

@@ -11,14 +11,67 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECS_CLUSTER: cicd-python-ecs-staging
+  EKS_CLUSTER: cicd-python-ecs-staging-eks
   TERRAFORM_VERSION: "1.6.0"
   ENVIRONMENT: staging
 
 jobs:
-  deploy-staging:
-    name: Build → Push → Terraform → Validate
+  pre-flight:
+    name: Security Gate (tfsec + checkov + Trivy)
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: |
+          TAG="${{ github.event.inputs.image_tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="sha-$(git rev-parse --short HEAD)"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build image for scan
+        run: docker build -t app:${{ steps.tag.outputs.tag }} src/
+
+      - name: Trivy gate (CRITICAL only — blocks deploy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: app:${{ steps.tag.outputs.tag }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+
+      - name: tfsec (HIGH severity gate)
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: infrastructure/terraform
+          minimum_severity: HIGH
+
+      - name: Checkov (>= 95% compliance)
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: infrastructure/terraform
+          framework: terraform
+          check: CKV_AWS_*
+          soft_fail: false
+
+  deploy-staging:
+    name: Build → Push → Terraform (EKS) → Validate
+    runs-on: ubuntu-latest
+    needs: pre-flight
     permissions:
       id-token: write   # OIDC for AWS auth
       contents: read
@@ -31,10 +84,7 @@ jobs:
       - name: Set image tag
         id: tag
         run: |
-          TAG="${{ github.event.inputs.image_tag }}"
-          if [ -z "$TAG" ]; then
-            TAG="sha-$(git rev-parse --short HEAD)"
-          fi
+          TAG="${{ needs.pre-flight.outputs.image_tag }}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
@@ -76,18 +126,59 @@ jobs:
           terraform apply \
             -var-file=environments/${{ env.ENVIRONMENT }}.tfvars \
             -var="image_tag=${{ steps.tag.outputs.tag }}" \
+            -var="enable_eks=true" \
+            -var="enable_ecs=false" \
+            -var="enable_bedrock_irsa=true" \
             -auto-approve
 
-      - name: Wait for ECS service stable
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
         run: |
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services cicd-python-ecs-${{ env.ENVIRONMENT }}
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy workload to EKS
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          BEDROCK_ROLE_ARN=$(cd infrastructure/terraform && terraform output -raw bedrock_irsa_role_arn)
+          IMAGE_URI="$ECR_REGISTRY/cicd-python-ecs:$IMAGE_TAG"
+          CANARY_REPLICAS=1
+          FULL_REPLICAS=2
+
+          kubectl apply -f k8s/base/namespace.yaml
+          sed "s|BEDROCK_ROLE_ARN_PLACEHOLDER|$BEDROCK_ROLE_ARN|g" \
+            k8s/base/serviceaccount.yaml | kubectl apply -f -
+          kubectl apply -f k8s/base/service.yaml
+
+          echo "==> Canary rollout (${CANARY_REPLICAS} replica)"
+          sed -e "s|IMAGE_PLACEHOLDER|$IMAGE_URI|g" \
+              -e "s|REPLICAS_PLACEHOLDER|$CANARY_REPLICAS|g" \
+            k8s/base/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/cicd-python-ecs -n app --timeout=300s
+
+          ./scripts/smoke-test-eks.sh \
+            --namespace=app \
+            --deployment=cicd-python-ecs \
+            --service=cicd-python-ecs \
+            --timeout=300
+
+          echo "==> Promote to full rollout (${FULL_REPLICAS} replicas)"
+          sed -e "s|IMAGE_PLACEHOLDER|$IMAGE_URI|g" \
+              -e "s|REPLICAS_PLACEHOLDER|$FULL_REPLICAS|g" \
+            k8s/base/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/cicd-python-ecs -n app --timeout=300s
 
       - name: Post-deploy smoke test
         run: |
-          ./scripts/smoke-test.sh \
-            --env=${{ env.ENVIRONMENT }} \
+          ./scripts/smoke-test-eks.sh \
+            --namespace=app \
+            --deployment=cicd-python-ecs \
+            --service=cicd-python-ecs \
             --endpoint=${{ vars.STAGING_URL }}/health \
             --timeout=300
 
@@ -102,7 +193,5 @@ jobs:
       - name: Notify failure + auto-rollback
         if: failure()
         run: |
-          echo "Deployment failed — triggering auto-rollback" >&2
-          ./scripts/auto-rollback.sh \
-            --env=${{ env.ENVIRONMENT }} \
-            --cluster=${{ env.ECS_CLUSTER }}
+          echo "Deployment failed — rolling back EKS deployment" >&2
+          kubectl rollout undo deployment/cicd-python-ecs -n app || true

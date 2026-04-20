@@ -29,15 +29,15 @@ module "ecr" {
 module "rds" {
   source = "./modules/rds"
 
-  project_name          = var.project_name
-  environment           = var.environment
-  vpc_id                = module.vpc.vpc_id
-  vpc_cidr              = module.vpc.vpc_cidr_block
-  private_subnet_ids    = module.vpc.private_subnet_ids
-  db_name               = var.db_name
-  master_username       = var.db_master_username
-  instance_class        = var.aurora_instance_class
-  instances_count       = var.aurora_instances_count
+  project_name       = var.project_name
+  environment        = var.environment
+  vpc_id             = module.vpc.vpc_id
+  vpc_cidr           = module.vpc.vpc_cidr_block
+  private_subnet_ids = module.vpc.private_subnet_ids
+  db_name            = var.db_name
+  master_username    = var.db_master_username
+  instance_class     = var.aurora_instance_class
+  instances_count    = var.aurora_instances_count
 
   depends_on = [module.vpc]
 }
@@ -52,6 +52,7 @@ module "s3" {
 }
 
 module "ecs" {
+  count  = var.enable_ecs ? 1 : 0
   source = "./modules/ecs-service"
 
   project_name       = var.project_name
@@ -74,14 +75,41 @@ module "ecs" {
   depends_on = [module.vpc, module.ecr, module.rds, module.s3]
 }
 
+module "eks" {
+  count  = var.enable_eks ? 1 : 0
+  source = "./modules/eks-service"
+
+  project_name               = var.project_name
+  environment                = var.environment
+  vpc_id                     = module.vpc.vpc_id
+  private_subnet_ids         = module.vpc.private_subnet_ids
+  public_subnet_ids          = module.vpc.public_subnet_ids
+  kubernetes_version         = var.kubernetes_version
+  endpoint_private_access    = var.eks_endpoint_private_access
+  endpoint_public_access     = var.eks_endpoint_public_access
+  node_instance_types        = var.eks_node_instance_types
+  node_desired_size          = var.eks_node_desired_size
+  node_min_size              = var.eks_node_min_size
+  node_max_size              = var.eks_node_max_size
+  create_oidc_provider       = var.enable_eks_oidc_provider
+  enable_bedrock_irsa        = var.enable_bedrock_irsa
+  bedrock_namespace          = var.bedrock_namespace
+  bedrock_service_account    = var.bedrock_service_account
+  bedrock_allowed_actions    = var.bedrock_allowed_actions
+  allowed_bedrock_model_arns = var.allowed_bedrock_model_arns
+
+  depends_on = [module.vpc]
+}
+
 module "monitoring" {
+  count  = var.enable_ecs ? 1 : 0
   source = "./modules/monitoring"
 
   project_name     = var.project_name
   environment      = var.environment
-  ecs_cluster_name = module.ecs.cluster_name
-  ecs_service_name = module.ecs.service_name
-  alb_arn_suffix   = module.ecs.alb_arn_suffix
+  ecs_cluster_name = module.ecs[0].cluster_name
+  ecs_service_name = module.ecs[0].service_name
+  alb_arn_suffix   = module.ecs[0].alb_arn_suffix
   rds_cluster_id   = module.rds.cluster_id
   aws_region       = var.aws_region
 

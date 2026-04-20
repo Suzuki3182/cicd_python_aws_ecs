@@ -11,7 +11,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "${var.project_name}-${var.environment}-vpc"
+    Name                                                           = "${var.project_name}-${var.environment}-vpc"
     "kubernetes.io/cluster/${var.project_name}-${var.environment}" = "shared"
   }
 }
@@ -48,7 +48,7 @@ resource "aws_subnet" "public" {
     Name = "${var.project_name}-${var.environment}-public-${var.availability_zones[count.index]}"
     Type = "Public"
     # Tag para o EKS criar Load Balancers públicos automaticamente
-    "kubernetes.io/role/elb"                                        = "1"
+    "kubernetes.io/role/elb"                                       = "1"
     "kubernetes.io/cluster/${var.project_name}-${var.environment}" = "shared"
   }
 }
@@ -67,7 +67,7 @@ resource "aws_subnet" "private" {
     Name = "${var.project_name}-${var.environment}-private-${var.availability_zones[count.index]}"
     Type = "Private"
     # Tag para o EKS criar Load Balancers internos automaticamente
-    "kubernetes.io/role/internal-elb"                               = "1"
+    "kubernetes.io/role/internal-elb"                              = "1"
     "kubernetes.io/cluster/${var.project_name}-${var.environment}" = "shared"
   }
 }

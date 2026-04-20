@@ -129,12 +129,12 @@ resource "aws_kms_key" "rds" {
 # -----------------------------------------------------------
 #checkov:skip=CKV2_AWS_8:AWS Backup plan is managed at the org level outside this module
 resource "aws_rds_cluster" "main" {
-  cluster_identifier      = "${var.project_name}-${var.environment}-aurora"
-  engine                  = "aurora-postgresql"
-  engine_version          = "15.4"
-  database_name           = var.db_name
-  master_username         = var.master_username
-  master_password         = random_password.db_master.result
+  cluster_identifier = "${var.project_name}-${var.environment}-aurora"
+  engine             = "aurora-postgresql"
+  engine_version     = "15.4"
+  database_name      = var.db_name
+  master_username    = var.master_username
+  master_password    = random_password.db_master.result
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]

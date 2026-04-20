@@ -56,6 +56,18 @@ variable "single_nat_gateway" {
   default     = false
 }
 
+variable "enable_ecs" {
+  description = "Enable ECS resources"
+  type        = bool
+  default     = true
+}
+
+variable "enable_eks" {
+  description = "Enable EKS resources"
+  type        = bool
+  default     = false
+}
+
 # ============================================================
 # ECS
 # ============================================================
@@ -181,4 +193,94 @@ variable "github_branch" {
   description = "GitHub branch to monitor"
   type        = string
   default     = "main"
+}
+
+# ============================================================
+# EKS
+# ============================================================
+
+variable "kubernetes_version" {
+  description = "EKS Kubernetes version"
+  type        = string
+  default     = "1.30"
+}
+
+variable "eks_endpoint_private_access" {
+  description = "Enable private EKS API endpoint"
+  type        = bool
+  default     = true
+}
+
+variable "eks_endpoint_public_access" {
+  description = "Enable public EKS API endpoint"
+  type        = bool
+  default     = true
+}
+
+variable "eks_node_instance_types" {
+  description = "EKS node group instance types"
+  type        = list(string)
+  default     = ["t3.medium"]
+}
+
+variable "eks_node_desired_size" {
+  description = "Desired number of EKS worker nodes"
+  type        = number
+  default     = 2
+}
+
+variable "eks_node_min_size" {
+  description = "Minimum number of EKS worker nodes"
+  type        = number
+  default     = 1
+}
+
+variable "eks_node_max_size" {
+  description = "Maximum number of EKS worker nodes"
+  type        = number
+  default     = 5
+}
+
+variable "enable_eks_oidc_provider" {
+  description = "Create EKS OIDC provider for IRSA"
+  type        = bool
+  default     = true
+}
+
+# ============================================================
+# Amazon Bedrock (IRSA)
+# ============================================================
+
+variable "enable_bedrock_irsa" {
+  description = "Create IRSA role for pods to call Amazon Bedrock"
+  type        = bool
+  default     = false
+}
+
+variable "bedrock_namespace" {
+  description = "Kubernetes namespace of the Bedrock-enabled service account"
+  type        = string
+  default     = "app"
+}
+
+variable "bedrock_service_account" {
+  description = "Kubernetes service account allowed to assume Bedrock IRSA role"
+  type        = string
+  default     = "bedrock-client"
+}
+
+variable "bedrock_allowed_actions" {
+  description = "Allowed IAM actions for Bedrock access"
+  type        = list(string)
+  default = [
+    "bedrock:InvokeModel",
+    "bedrock:InvokeModelWithResponseStream",
+    "bedrock:ListFoundationModels"
+  ]
+}
+
+variable "allowed_bedrock_model_arns" {
+  description = "Allowed model ARNs for Bedrock access"
+  type        = list(string)
+  default     = ["*"]
 }

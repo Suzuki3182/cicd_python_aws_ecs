@@ -13,7 +13,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  ECS_CLUSTER: cicd-python-ecs-prod
+  EKS_CLUSTER: cicd-python-ecs-prod-eks
   TERRAFORM_VERSION: "1.6.0"
   ENVIRONMENT: prod
 
@@ -65,7 +65,7 @@ jobs:
         run: echo "Production deployment approved"
 
   deploy-prod:
-    name: Terraform Apply → ECS Deploy → Validate
+    name: Terraform Apply → EKS Deploy → Validate
     runs-on: ubuntu-latest
     needs: [pre-flight, approval]
     if: always() && needs.pre-flight.result == 'success'
@@ -97,18 +97,56 @@ jobs:
           terraform apply \
             -var-file=environments/${{ env.ENVIRONMENT }}.tfvars \
             -var="image_tag=${{ inputs.image_tag }}" \
+            -var="enable_eks=true" \
+            -var="enable_ecs=false" \
+            -var="enable_bedrock_irsa=true" \
             -auto-approve
 
-      - name: Wait for ECS service stable
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Configure kubeconfig
         run: |
-          aws ecs wait services-stable \
-            --cluster ${{ env.ECS_CLUSTER }} \
-            --services cicd-python-ecs-${{ env.ENVIRONMENT }}
+          aws eks update-kubeconfig \
+            --name ${{ env.EKS_CLUSTER }} \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Deploy workload to EKS
+        run: |
+          BEDROCK_ROLE_ARN=$(cd infrastructure/terraform && terraform output -raw bedrock_irsa_role_arn)
+          IMAGE_URI="${{ vars.ECR_REGISTRY }}/cicd-python-ecs:${{ inputs.image_tag }}"
+          CANARY_REPLICAS=1
+          FULL_REPLICAS=3
+
+          kubectl apply -f k8s/base/namespace.yaml
+          sed "s|BEDROCK_ROLE_ARN_PLACEHOLDER|$BEDROCK_ROLE_ARN|g" \
+            k8s/base/serviceaccount.yaml | kubectl apply -f -
+          kubectl apply -f k8s/base/service.yaml
+
+          echo "==> Canary rollout (${CANARY_REPLICAS} replica)"
+          sed -e "s|IMAGE_PLACEHOLDER|$IMAGE_URI|g" \
+              -e "s|REPLICAS_PLACEHOLDER|$CANARY_REPLICAS|g" \
+            k8s/base/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/cicd-python-ecs -n app --timeout=600s
+
+          ./scripts/smoke-test-eks.sh \
+            --namespace=app \
+            --deployment=cicd-python-ecs \
+            --service=cicd-python-ecs \
+            --timeout=600
+
+          echo "==> Promote to full rollout (${FULL_REPLICAS} replicas)"
+          sed -e "s|IMAGE_PLACEHOLDER|$IMAGE_URI|g" \
+              -e "s|REPLICAS_PLACEHOLDER|$FULL_REPLICAS|g" \
+            k8s/base/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/cicd-python-ecs -n app --timeout=600s
 
       - name: Production smoke test
         run: |
-          ./scripts/smoke-test.sh \
-            --env=${{ env.ENVIRONMENT }} \
+          ./scripts/smoke-test-eks.sh \
+            --namespace=app \
+            --deployment=cicd-python-ecs \
+            --service=cicd-python-ecs \
             --endpoint=${{ vars.PROD_URL }}/health \
             --timeout=600
 
@@ -122,6 +160,4 @@ jobs:
       - name: Auto-rollback on failure
         if: failure()
         run: |
-          ./scripts/auto-rollback.sh \
-            --env=${{ env.ENVIRONMENT }} \
-            --cluster=${{ env.ECS_CLUSTER }}
+          kubectl rollout undo deployment/cicd-python-ecs -n app || true

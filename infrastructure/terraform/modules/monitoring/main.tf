@@ -19,9 +19,9 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "ECS CPU & Memory Utilization"
+          title = "ECS CPU & Memory Utilization"
           metrics = [
-            ["AWS/ECS", "CPUUtilization",    "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name],
+            ["AWS/ECS", "CPUUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name],
             ["AWS/ECS", "MemoryUtilization", "ClusterName", var.ecs_cluster_name, "ServiceName", var.ecs_service_name]
           ]
           period = 60
@@ -36,10 +36,10 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "ALB Request Count & Latency"
+          title = "ALB Request Count & Latency"
           metrics = [
-            ["AWS/ApplicationELB", "RequestCount",         "LoadBalancer", var.alb_arn_suffix],
-            ["AWS/ApplicationELB", "TargetResponseTime",   "LoadBalancer", var.alb_arn_suffix]
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", var.alb_arn_suffix],
+            ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", var.alb_arn_suffix]
           ]
           period = 60
           stat   = "Sum"
@@ -53,9 +53,9 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "RDS CPU & Connections"
+          title = "RDS CPU & Connections"
           metrics = [
-            ["AWS/RDS", "CPUUtilization",    "DBClusterIdentifier", var.rds_cluster_id],
+            ["AWS/RDS", "CPUUtilization", "DBClusterIdentifier", var.rds_cluster_id],
             ["AWS/RDS", "DatabaseConnections", "DBClusterIdentifier", var.rds_cluster_id]
           ]
           period = 60
@@ -70,10 +70,10 @@ resource "aws_cloudwatch_dashboard" "main" {
         width  = 12
         height = 6
         properties = {
-          title   = "Agent Actions Log"
-          query   = "SOURCE '/claude/agent' | fields @timestamp, @message | sort @timestamp desc | limit 50"
-          region  = var.aws_region
-          view    = "table"
+          title  = "Agent Actions Log"
+          query  = "SOURCE '/claude/agent' | fields @timestamp, @message | sort @timestamp desc | limit 50"
+          region = var.aws_region
+          view   = "table"
         }
       }
     ]

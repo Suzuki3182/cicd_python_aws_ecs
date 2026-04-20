@@ -50,7 +50,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "main" {
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "aws:kms" # Usa KMS para criptografia
+      sse_algorithm     = "aws:kms" # Usa KMS para criptografia
       kms_master_key_id = aws_kms_key.s3.arn
     }
     bucket_key_enabled = true # Reduz custo de chamadas KMS
