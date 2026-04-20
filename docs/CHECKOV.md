@@ -1,6 +1,6 @@
 # Checkov Configuration
 
-This repository keeps Checkov settings in `/home/runner/work/cicd_python_aws_ecs/cicd_python_aws_ecs/.checkov.yaml`.
+This repository keeps Checkov settings in `.checkov.yaml` at the repository root.
 
 ## What is configured
 
