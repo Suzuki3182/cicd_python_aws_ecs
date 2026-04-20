@@ -1,0 +1,4 @@
+# Resource-level suppressions should be documented inline in Terraform, for example:
+# checkov:skip=CKV_AWS_XXX:Justification
+#
+# Add path or check suppressions here only when an approved exception exists.

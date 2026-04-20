@@ -1,0 +1,9 @@
+framework:
+  - terraform
+
+quiet: false
+compact: true
+soft-fail: true
+download-external-modules: true
+
+skip-check: []

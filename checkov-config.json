@@ -1,0 +1,11 @@
+{
+  "directory": "infrastructure/terraform",
+  "reports_dir": "reports/checkov",
+  "framework": "terraform",
+  "retry": {
+    "max_attempts": 3,
+    "delay_seconds": 5
+  },
+  "soft_fail": true,
+  "outputs": ["cli", "json", "sarif", "html"]
+}

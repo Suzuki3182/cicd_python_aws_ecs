@@ -124,14 +124,31 @@ jobs:
           format: json
           additional_args: --minimum-severity HIGH --out reports/tfsec.json
 
-      - name: Checkov IaC scan
-        uses: bridgecrewio/checkov-action@master
+      - uses: actions/setup-python@v6
         with:
-          directory: infrastructure/terraform
-          framework: terraform
-          output_format: json
-          output_file_path: reports/checkov.json
-          soft_fail: false
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install Checkov (pip)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "checkov>=3,<4"
+
+      - name: Checkov IaC scan
+        run: bash scripts/checkov-scan.sh
+        continue-on-error: true
+
+      - name: Generate Checkov summary
+        if: always()
+        run: bash scripts/checkov-summary.sh
+
+      - name: Generate Checkov HTML report
+        if: always()
+        run: bash scripts/generate-html-report.sh
+
+      - name: Publish Checkov results
+        if: always()
+        run: bash scripts/publish-results.sh
 
       - name: Bandit SAST
         run: |
@@ -144,6 +161,31 @@ jobs:
         if: always() && hashFiles('reports/trivy.sarif') != ''
         with:
           sarif_file: reports/trivy.sarif
+
+      - name: Upload Checkov SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('reports/checkov/checkov.sarif') != ''
+        with:
+          sarif_file: reports/checkov/checkov.sarif
+
+      - name: Upload Checkov reports artifact
+        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('reports/checkov/*') != ''
+        with:
+          name: checkov-reports
+          path: reports/checkov
+
+      - name: Display Checkov summary in logs
+        if: always()
+        run: |
+          if [ -f reports/checkov/summary.txt ]; then
+            cat reports/checkov/summary.txt
+          else
+            echo "Checkov summary not generated."
+          fi
+          if [ -f reports/checkov/summary.md ]; then
+            cat reports/checkov/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   comment-results:
     name: PR Comment
