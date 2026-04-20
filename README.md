@@ -480,18 +480,18 @@ make bootstrap
 ```
 
 What this does:
-1. Creates an S3 bucket (`cicd-python-ecs-tf-state`) to store Terraform state files
-2. Creates a DynamoDB table (`cicd-python-ecs-tf-lock`) to prevent simultaneous deployments
+1. Creates an S3 bucket (`tf-state-cicd-python-aws-ecs`) to store Terraform state files
+2. Creates a DynamoDB table (`tf-state-lock`) to prevent simultaneous deployments
 3. Initializes Terraform and creates 3 workspaces: `dev`, `staging`, `prod`
 
 Expected output:
 ```
-==> Creating S3 backend bucket: cicd-python-ecs-tf-state
-==> Creating DynamoDB lock table: cicd-python-ecs-tf-lock
+==> Creating S3 backend bucket: tf-state-cicd-python-aws-ecs
+==> Creating DynamoDB lock table: tf-state-lock
 ==> Initializing Terraform workspaces
 ==> Bootstrap complete
-    State bucket : cicd-python-ecs-tf-state
-    Lock table   : cicd-python-ecs-tf-lock
+  State bucket : tf-state-cicd-python-aws-ecs
+  Lock table   : tf-state-lock
 ```
 
 ---
@@ -970,11 +970,11 @@ terraform workspace select dev
 terraform destroy -var-file=environments/dev.tfvars -auto-approve
 
 # Delete the S3 state bucket (empty it first)
-aws s3 rm s3://cicd-python-ecs-tf-state --recursive
-aws s3api delete-bucket --bucket cicd-python-ecs-tf-state
+aws s3 rm s3://tf-state-cicd-python-aws-ecs --recursive
+aws s3api delete-bucket --bucket tf-state-cicd-python-aws-ecs
 
 # Delete the DynamoDB lock table
-aws dynamodb delete-table --table-name cicd-python-ecs-tf-lock
+aws dynamodb delete-table --table-name tf-state-lock
 
 # Delete the ECR repository (this removes all images)
 aws ecr delete-repository \

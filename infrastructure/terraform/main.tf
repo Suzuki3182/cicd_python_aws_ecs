@@ -38,7 +38,6 @@ module "rds" {
   master_username       = var.db_master_username
   instance_class        = var.aurora_instance_class
   instances_count       = var.aurora_instances_count
-  app_security_group_id = module.ecs.service_security_group_id
 
   depends_on = [module.vpc]
 }

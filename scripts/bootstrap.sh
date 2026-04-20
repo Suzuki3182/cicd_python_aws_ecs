@@ -3,15 +3,22 @@
 set -euo pipefail
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
-PROJECT="${PROJECT_NAME:-cicd-python-ecs}"
-TF_STATE_BUCKET="${PROJECT}-tf-state"
-TF_LOCK_TABLE="${PROJECT}-tf-lock"
+TF_STATE_BUCKET="${TF_STATE_BUCKET:-tf-state-cicd-python-aws-ecs}"
+TF_LOCK_TABLE="${TF_LOCK_TABLE:-tf-state-lock}"
 
 echo "==> Creating S3 backend bucket: $TF_STATE_BUCKET"
-aws s3api create-bucket \
-  --bucket "$TF_STATE_BUCKET" \
-  --region "$AWS_REGION" \
-  --create-bucket-configuration LocationConstraint="$AWS_REGION" 2>/dev/null || true
+if ! aws s3api head-bucket --bucket "$TF_STATE_BUCKET" >/dev/null 2>&1; then
+  if [ "$AWS_REGION" = "us-east-1" ]; then
+    aws s3api create-bucket \
+      --bucket "$TF_STATE_BUCKET" \
+      --region "$AWS_REGION"
+  else
+    aws s3api create-bucket \
+      --bucket "$TF_STATE_BUCKET" \
+      --region "$AWS_REGION" \
+      --create-bucket-configuration LocationConstraint="$AWS_REGION"
+  fi
+fi
 
 aws s3api put-bucket-versioning \
   --bucket "$TF_STATE_BUCKET" \
@@ -37,7 +44,7 @@ aws dynamodb create-table \
 
 echo "==> Initializing Terraform workspaces"
 cd infrastructure/terraform
-terraform init
+terraform init -reconfigure
 for env in dev staging prod; do
   terraform workspace new "$env" 2>/dev/null || true
 done

@@ -18,5 +18,5 @@ s3_bucket_name      = "cicd-python-ecs-prod-artifacts"
 ecr_repository_name = "cicd-python-ecs"
 image_tag           = "latest"
 
-# Set to your ACM certificate ARN before applying
-certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/CERTIFICATE_ID"
+# Replace with a real ACM certificate ARN before applying.
+certificate_arn = "arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-0000-0000-000000000000"

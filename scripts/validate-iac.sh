@@ -27,15 +27,31 @@ if [ "$TFSEC_COUNT" -gt 0 ]; then
 fi
 
 echo "==> Running checkov"
+if ! command -v checkov >/dev/null 2>&1; then
+  echo "FAIL: checkov command not found in PATH" >&2
+  exit 1
+fi
+
+CHECKOV_EXIT=0
+CHECKOV_REPORT_PATH="$REPORTS_DIR/checkov.json"
 checkov \
   --directory "$TF_DIR" \
   --framework terraform \
   --output json \
-  --output-file "$REPORTS_DIR/checkov.json" \
+  --output-file "$CHECKOV_REPORT_PATH" \
   --compact || CHECKOV_EXIT=$?
 
-PASSED=$(jq '.summary.passed' "$REPORTS_DIR/checkov.json" 2>/dev/null || echo 0)
-FAILED=$(jq '.summary.failed' "$REPORTS_DIR/checkov.json" 2>/dev/null || echo 0)
+if [ -d "$CHECKOV_REPORT_PATH" ] && [ -s "$CHECKOV_REPORT_PATH/results_json.json" ]; then
+  CHECKOV_REPORT_PATH="$CHECKOV_REPORT_PATH/results_json.json"
+fi
+
+if [ ! -s "$CHECKOV_REPORT_PATH" ]; then
+  echo "FAIL: checkov report was not generated" >&2
+  exit "${CHECKOV_EXIT:-1}"
+fi
+
+PASSED=$(jq '.summary.passed' "$CHECKOV_REPORT_PATH" 2>/dev/null || echo 0)
+FAILED=$(jq '.summary.failed' "$CHECKOV_REPORT_PATH" 2>/dev/null || echo 0)
 TOTAL=$((PASSED + FAILED))
 if [ "$TOTAL" -gt 0 ]; then
   SCORE=$(( (PASSED * 100) / TOTAL ))

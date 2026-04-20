@@ -50,7 +50,55 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: reports/coverage-unit.xml
+          path: reports/coverage.xml
+
+  skill-conformance:
+    name: Skill Conformance Gate
+    runs-on: ubuntu-latest
+    needs: [test, scan]
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify Claude skill definitions exist
+        run: |
+          test -f .claude/skills/deploy-ecs/SKILL.md
+          test -f .claude/skills/scan-security/SKILL.md
+          test -f .claude/skills/test-integration/SKILL.md
+          test -f .claude/skills/rotate-secrets/SKILL.md
+          test -f .claude/skills/drift-detection/SKILL.md
+
+      - name: Verify deploy-ecs automation parity
+        run: |
+          grep -q "terraform apply" .github/workflows/cd-staging.yml
+          grep -q "aws ecs wait services-stable" .github/workflows/cd-staging.yml
+          grep -q "scripts/smoke-test.sh" .github/workflows/cd-staging.yml
+          grep -q "scripts/auto-rollback.sh" .github/workflows/cd-staging.yml
+
+          grep -q "terraform apply" .github/workflows/cd-production.yml
+          grep -q "aws ecs wait services-stable" .github/workflows/cd-production.yml
+          grep -q "scripts/smoke-test.sh" .github/workflows/cd-production.yml
+          grep -q "scripts/auto-rollback.sh" .github/workflows/cd-production.yml
+
+      - name: Verify scan-security automation parity
+        run: |
+          grep -q "trivy-action" .github/workflows/ci.yml
+          grep -q "tfsec-action" .github/workflows/ci.yml
+          grep -q "checkov-action" .github/workflows/ci.yml
+          grep -q "bandit" .github/workflows/ci.yml
+
+      - name: Verify test-integration automation parity
+        run: |
+          grep -q "make test" .github/workflows/ci.yml
+          grep -q "cov-fail-under=90" Makefile
+          grep -q "test-integration:" Makefile
+
+      - name: Verify drift and rotation automation parity
+        run: |
+          grep -q "terraform plan" .github/workflows/drift-detect.yml
+          grep -q -- "-detailed-exitcode" .github/workflows/drift-detect.yml
+          grep -q "aws cloudwatch put-metric-data" .github/workflows/drift-detect.yml
+          grep -q "aws secretsmanager rotate-secret" .github/workflows/drift-detect.yml
+          grep -q "Checkov (>= 95% compliance)" .github/workflows/cd-production.yml
 
   build:
     name: Docker Build
@@ -148,7 +196,7 @@ jobs:
   comment-results:
     name: PR Comment
     runs-on: ubuntu-latest
-    needs: [test, scan]
+    needs: [test, scan, skill-conformance]
     if: github.event_name == 'pull_request'
     permissions:
       pull-requests: write

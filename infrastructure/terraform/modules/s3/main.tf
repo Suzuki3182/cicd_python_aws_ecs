@@ -141,8 +141,6 @@ data "aws_iam_policy_document" "s3_bucket" {
   }
 }
 
-data "aws_caller_identity" "current" {}
-
 # -----------------------------------------------------------
 # Política de ciclo de vida (reduz custos de armazenamento)
 # -----------------------------------------------------------
