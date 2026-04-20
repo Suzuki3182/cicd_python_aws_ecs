@@ -27,16 +27,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+        run: |
+          set -euo pipefail
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "AWS_ACCOUNT_ID secret must be a 12-digit account ID"; exit 1; }
+          [ -n "$ECR_REGISTRY" ] || { echo "ECR_REGISTRY secret is required"; exit 1; }
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Trivy scan on prod image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ vars.ECR_REGISTRY }}/cicd-python-ecs:${{ inputs.image_tag }}
+          image-ref: ${{ secrets.ECR_REGISTRY }}/cicd-python-ecs:${{ inputs.image_tag }}
           severity: CRITICAL
           exit-code: 1
 
@@ -76,10 +85,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          PROD_URL: ${{ secrets.PROD_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "AWS_ACCOUNT_ID secret must be a 12-digit account ID"; exit 1; }
+          [ -n "$PROD_URL" ] || { echo "PROD_URL secret is required"; exit 1; }
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Setup Terraform
@@ -109,7 +127,7 @@ jobs:
         run: |
           ./scripts/smoke-test.sh \
             --env=${{ env.ENVIRONMENT }} \
-            --endpoint=${{ vars.PROD_URL }}/health \
+            --endpoint=${{ secrets.PROD_URL }}/health \
             --timeout=600
 
       - name: Deployment summary
@@ -117,7 +135,7 @@ jobs:
         run: |
           echo "## Production Deployment Successful" >> $GITHUB_STEP_SUMMARY
           echo "- Image: \`${{ inputs.image_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- URL: ${{ vars.PROD_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: ${{ secrets.PROD_URL }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Auto-rollback on failure
         if: failure()
