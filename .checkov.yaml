@@ -1,0 +1,26 @@
+framework:
+  - terraform
+
+directory:
+  - infrastructure/terraform
+
+output:
+  - cli
+  - json
+  - sarif
+
+soft-fail: true
+compact: true
+quiet: false
+summary-position: top
+download-external-modules: true
+
+# Track remaining findings over time.
+baseline: .checkov.baseline.json
+
+# Known policy exceptions / false positives tracked centrally.
+skip-check:
+  # False positive for dedicated ALB access-log archive bucket.
+  - CKV_AWS_18
+  # Accepted exception for this stack; cross-region replication is handled externally.
+  - CKV_AWS_144

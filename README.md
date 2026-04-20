@@ -156,7 +156,8 @@ terraform-aws-infra/
 ├── docs/
 │   ├── ARCHITECTURE.md          ← Deep-dive architecture explanation
 │   ├── RUNBOOK.md               ← What to do when things break
-│   └── COMPLIANCE.md            ← Security compliance mapping
+│   ├── COMPLIANCE.md            ← Security compliance mapping
+│   └── CHECKOV.md               ← Checkov baseline, suppression, and CI config
 │
 ├── Makefile                     ← Shortcuts for common commands
 ├── pyproject.toml               ← Python project config (linting, testing)

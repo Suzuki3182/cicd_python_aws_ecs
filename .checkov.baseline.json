@@ -1,0 +1,27 @@
+{
+    "failed_checks": [
+        {
+            "file": "/modules/ecs-service/main.tf",
+            "findings": [
+                {
+                    "resource": "module.ecs.aws_lb.this",
+                    "check_ids": [
+                        "CKV2_AWS_28"
+                    ]
+                }
+            ]
+        },
+        {
+            "file": "/modules/rds/main.tf",
+            "findings": [
+                {
+                    "resource": "module.rds.aws_rds_cluster.main",
+                    "check_ids": [
+                        "CKV2_AWS_27",
+                        "CKV2_AWS_8"
+                    ]
+                }
+            ]
+        }
+    ]
+}

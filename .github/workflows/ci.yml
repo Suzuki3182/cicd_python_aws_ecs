@@ -125,13 +125,83 @@ jobs:
           additional_args: --minimum-severity HIGH --out reports/tfsec.json
 
       - name: Checkov IaC scan
-        uses: bridgecrewio/checkov-action@master
+        uses: bridgecrewio/checkov-action@v12.999.0
         with:
           directory: infrastructure/terraform
           framework: terraform
-          output_format: json
-          output_file_path: reports/checkov.json
-          soft_fail: false
+          config_file: .checkov.yaml
+          output_format: cli,json,sarif
+          output_file_path: console,reports/checkov-json,reports/checkov-sarif
+          soft_fail: true
+          compact: true
+          quiet: false
+
+      - name: Generate Checkov HTML report
+        if: always()
+        run: |
+          python - <<'PY'
+          import html
+          import json
+          from pathlib import Path
+
+          candidate_paths = [
+              Path("reports/checkov-json"),
+              Path("reports/results_json.json"),
+              Path("reports/checkov.json"),
+          ]
+          report_path = next((p for p in candidate_paths if p.exists() and p.is_file()), None)
+          if not report_path:
+              raise SystemExit("No Checkov JSON report found")
+          html_path = Path("reports/checkov.html")
+          data = json.loads(report_path.read_text(encoding="utf-8"))
+          summary = data.get("summary", {})
+          failed_checks = data.get("results", {}).get("failed_checks", [])
+
+          rows = []
+          for check in failed_checks:
+              rows.append(
+                  "<tr>"
+                  f"<td>{html.escape(check.get('check_id', ''))}</td>"
+                  f"<td>{html.escape(check.get('check_name', ''))}</td>"
+                  f"<td>{html.escape(check.get('repo_file_path', ''))}</td>"
+                  f"<td>{html.escape(check.get('resource', ''))}</td>"
+                  "</tr>"
+              )
+
+          html_report = f\"\"\"<!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8" />
+            <title>Checkov Report</title>
+            <style>
+              body {{ font-family: Arial, sans-serif; margin: 2rem; }}
+              table {{ border-collapse: collapse; width: 100%; }}
+              th, td {{ border: 1px solid #ddd; padding: 0.5rem; text-align: left; }}
+              th {{ background-color: #f5f5f5; }}
+            </style>
+          </head>
+          <body>
+            <h1>Checkov Terraform Report</h1>
+            <ul>
+              <li>Passed: {summary.get('passed', 0)}</li>
+              <li>Failed: {summary.get('failed', 0)}</li>
+              <li>Skipped: {summary.get('skipped', 0)}</li>
+              <li>Parsing errors: {summary.get('parsing_errors', 0)}</li>
+            </ul>
+            <h2>Failed Checks</h2>
+            <table>
+              <thead>
+                <tr><th>Check ID</th><th>Name</th><th>File</th><th>Resource</th></tr>
+              </thead>
+              <tbody>
+                {''.join(rows) if rows else '<tr><td colspan="4">No failed checks.</td></tr>'}
+              </tbody>
+            </table>
+          </body>
+          </html>
+          \"\"\"
+          html_path.write_text(html_report, encoding="utf-8")
+          PY
 
       - name: Bandit SAST
         run: |
@@ -144,6 +214,22 @@ jobs:
         if: always() && hashFiles('reports/trivy.sarif') != ''
         with:
           sarif_file: reports/trivy.sarif
+
+      - name: Upload Checkov SARIF to GitHub
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() && hashFiles('reports/checkov-sarif') != ''
+        with:
+          sarif_file: reports/checkov-sarif
+
+      - name: Upload Checkov reports artifact
+        if: always() && (hashFiles('reports/checkov-json') != '' || hashFiles('reports/checkov.html') != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-reports
+          path: |
+            reports/checkov-json
+            reports/checkov-sarif
+            reports/checkov.html
 
   comment-results:
     name: PR Comment
