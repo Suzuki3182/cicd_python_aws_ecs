@@ -8,52 +8,35 @@ FRAMEWORK="${CHECKOV_FRAMEWORK:-terraform}"
 MAX_RETRIES="${CHECKOV_RETRIES:-3}"
 RETRY_DELAY="${CHECKOV_RETRY_DELAY_SECONDS:-5}"
 
+read_config_value() {
+  local key="$1"
+  local default="$2"
+
+  python - "$CONFIG_FILE" "$key" "$default" <<'PY'
+import json
+import sys
+
+path, key_path, default = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, encoding="utf-8") as config_file:
+    data = json.load(config_file)
+
+value = data
+for part in key_path.split("."):
+    if not isinstance(value, dict) or part not in value:
+        print(default)
+        raise SystemExit(0)
+    value = value[part]
+
+print(value)
+PY
+}
+
 if [ -f "$CONFIG_FILE" ]; then
-  TF_DIR="$(python - "$CONFIG_FILE" "$TF_DIR" <<'PY'
-import json
-import sys
-path, default = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-print(data.get("directory", default))
-PY
-)"
-  REPORTS_DIR="$(python - "$CONFIG_FILE" "$REPORTS_DIR" <<'PY'
-import json
-import sys
-path, default = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-print(data.get("reports_dir", default))
-PY
-)"
-  FRAMEWORK="$(python - "$CONFIG_FILE" "$FRAMEWORK" <<'PY'
-import json
-import sys
-path, default = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-print(data.get("framework", default))
-PY
-)"
-  MAX_RETRIES="$(python - "$CONFIG_FILE" "$MAX_RETRIES" <<'PY'
-import json
-import sys
-path, default = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-print(data.get("retry", {}).get("max_attempts", default))
-PY
-)"
-  RETRY_DELAY="$(python - "$CONFIG_FILE" "$RETRY_DELAY" <<'PY'
-import json
-import sys
-path, default = sys.argv[1], sys.argv[2]
-with open(path, encoding="utf-8") as fh:
-    data = json.load(fh)
-print(data.get("retry", {}).get("delay_seconds", default))
-PY
-)"
+  TF_DIR="$(read_config_value "directory" "$TF_DIR")"
+  REPORTS_DIR="$(read_config_value "reports_dir" "$REPORTS_DIR")"
+  FRAMEWORK="$(read_config_value "framework" "$FRAMEWORK")"
+  MAX_RETRIES="$(read_config_value "retry.max_attempts" "$MAX_RETRIES")"
+  RETRY_DELAY="$(read_config_value "retry.delay_seconds" "$RETRY_DELAY")"
 fi
 
 mkdir -p "$REPORTS_DIR"
@@ -63,12 +46,6 @@ JSON_REPORT="$REPORTS_DIR/checkov.json"
 SARIF_REPORT="$REPORTS_DIR/checkov.sarif"
 STATUS_FILE="$REPORTS_DIR/checkov-status.env"
 RAW_REPORT_DIR="$REPORTS_DIR/raw"
-
-if ! command -v checkov >/dev/null 2>&1; then
-  echo "checkov not found; installing via pip"
-  python -m pip install --upgrade pip
-  python -m pip install "checkov>=3,<4"
-fi
 
 run_checkov() {
   local base_args=(
@@ -87,11 +64,18 @@ run_checkov() {
   checkov "${base_args[@]}" --output json --output-file-path "$RAW_REPORT_DIR"
   checkov "${base_args[@]}" --output sarif --output-file-path "$RAW_REPORT_DIR"
 
-  json_source="$(find "$RAW_REPORT_DIR" -maxdepth 1 -type f -name '*json*.json' | head -n 1)"
-  sarif_source="$(find "$RAW_REPORT_DIR" -maxdepth 1 -type f -name '*sarif*.sarif' | head -n 1)"
+  # Checkov currently emits files like results_json.json and results_sarif.sarif when output path is a directory.
+  json_source="$(find "$RAW_REPORT_DIR" -maxdepth 1 -type f -name 'results_json*.json' | head -n 1)"
+  sarif_source="$(find "$RAW_REPORT_DIR" -maxdepth 1 -type f -name 'results_sarif*.sarif' | head -n 1)"
 
-  [ -n "$json_source" ] && [ -f "$json_source" ] || return 1
-  [ -n "$sarif_source" ] && [ -f "$sarif_source" ] || return 1
+  if [ -z "$json_source" ] || [ ! -f "$json_source" ]; then
+    echo "WARN: expected Checkov JSON output not found in $RAW_REPORT_DIR"
+    return 1
+  fi
+  if [ -z "$sarif_source" ] || [ ! -f "$sarif_source" ]; then
+    echo "WARN: expected Checkov SARIF output not found in $RAW_REPORT_DIR"
+    return 1
+  fi
 
   cp "$json_source" "$JSON_REPORT"
   cp "$sarif_source" "$SARIF_REPORT"
@@ -99,11 +83,11 @@ run_checkov() {
 }
 
 attempt=1
-scan_success=0
+scan_succeeded=0
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
   echo "==> Running Checkov attempt $attempt/$MAX_RETRIES"
   if run_checkov; then
-    scan_success=1
+    scan_succeeded=1
     break
   fi
   echo "WARN: Checkov attempt $attempt failed"
@@ -113,7 +97,7 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
   attempt=$((attempt + 1))
 done
 
-if [ "$scan_success" -eq 0 ]; then
+if [ "$scan_succeeded" -eq 0 ]; then
   echo "WARN: Checkov failed after $MAX_RETRIES attempts. Writing fallback report."
   {
     echo "CHECKOV_SCAN_SUCCESS=false"

@@ -22,6 +22,7 @@ fi
 python - "$JSON_REPORT" "$HTML_REPORT" "$HISTORY_FILE" <<'PY'
 import html
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,8 @@ from pathlib import Path
 json_path = Path(sys.argv[1])
 html_path = Path(sys.argv[2])
 history_path = Path(sys.argv[3])
+# CHECKOV_HISTORY_MAX_ENTRIES controls how many scan snapshots are retained in history.json for trend display.
+max_history_entries = int(os.environ.get("CHECKOV_HISTORY_MAX_ENTRIES", "20"))
 
 data = json.loads(json_path.read_text(encoding="utf-8"))
 report = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else {})
@@ -55,7 +58,7 @@ if history_path.exists():
     except json.JSONDecodeError:
         history = []
 
-current_entry = {
+current_scan_snapshot = {
     "timestamp": datetime.now(timezone.utc).isoformat(),
     "passed": passed,
     "failed": failed,
@@ -63,12 +66,19 @@ current_entry = {
     "parsing_errors": parsing_errors,
     "compliance": compliance,
 }
-history.append(current_entry)
-history = history[-20:]
+history.append(current_scan_snapshot)
+history = history[-max_history_entries:]
 history_path.write_text(json.dumps(history, indent=2), encoding="utf-8")
 
 history_rows = "\n".join(
-    f"<tr><td>{html.escape(item['timestamp'])}</td><td>{item['passed']}</td><td>{item['failed']}</td><td>{item['compliance']}%</td></tr>"
+    (
+        "<tr>"
+        f"<td>{html.escape(str(item['timestamp']))}</td>"
+        f"<td>{html.escape(str(item['passed']))}</td>"
+        f"<td>{html.escape(str(item['failed']))}</td>"
+        f"<td>{html.escape(str(item['compliance']))}%</td>"
+        "</tr>"
+    )
     for item in history
 )
 
@@ -89,8 +99,16 @@ if not failed_rows:
     failed_rows = ['<tr><td colspan="6">No failed checks.</td></tr>']
 
 severity_items = "".join(
-    f"<li>{html.escape(level)}: {count}</li>" for level, count in sorted(severity_counts.items())
+    f"<li>{html.escape(level)}: {html.escape(str(count))}</li>" for level, count in sorted(severity_counts.items())
 ) or "<li>No failed checks</li>"
+
+compliance_text = html.escape(str(compliance))
+passed_text = html.escape(str(passed))
+failed_text = html.escape(str(failed))
+skipped_text = html.escape(str(skipped))
+parsing_errors_text = html.escape(str(parsing_errors))
+status_text = html.escape(status)
+status_class = "pass" if status == "PASS" else "fail"
 
 report_html = f"""<!doctype html>
 <html lang="en">
@@ -110,13 +128,13 @@ report_html = f"""<!doctype html>
 </head>
 <body>
   <h1>Checkov Terraform Report</h1>
-  <p>Status: <span class="status-{'pass' if status == 'PASS' else 'fail'}">{status}</span></p>
+  <p>Status: <span class="status-{status_class}">{status_text}</span></p>
   <div class="cards">
-    <div class="card"><strong>Compliance</strong><br>{compliance}%</div>
-    <div class="card"><strong>Passed</strong><br>{passed}</div>
-    <div class="card"><strong>Failed</strong><br>{failed}</div>
-    <div class="card"><strong>Skipped</strong><br>{skipped}</div>
-    <div class="card"><strong>Parsing Errors</strong><br>{parsing_errors}</div>
+    <div class="card"><strong>Compliance</strong><br>{compliance_text}%</div>
+    <div class="card"><strong>Passed</strong><br>{passed_text}</div>
+    <div class="card"><strong>Failed</strong><br>{failed_text}</div>
+    <div class="card"><strong>Skipped</strong><br>{skipped_text}</div>
+    <div class="card"><strong>Parsing Errors</strong><br>{parsing_errors_text}</div>
   </div>
 
   <h2>Severity Breakdown</h2>

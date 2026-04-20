@@ -136,7 +136,6 @@ jobs:
 
       - name: Checkov IaC scan
         run: bash scripts/checkov-scan.sh
-        continue-on-error: true
 
       - name: Generate Checkov summary
         if: always()
@@ -185,6 +184,24 @@ jobs:
           fi
           if [ -f reports/checkov/summary.md ]; then
             cat reports/checkov/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Validate Checkov execution
+        if: always()
+        run: |
+          if [ ! -f reports/checkov/checkov-status.env ]; then
+            echo "::error::Missing Checkov status file."
+            exit 1
+          fi
+          # The scan runs with graceful fallback to preserve reports (including a fallback JSON with
+          # parsing_errors=1); this status file is the explicit contract used to fail CI only when
+          # Checkov execution itself failed after retries.
+          # shellcheck source path is dynamic in CI workspace; status file is generated in a prior step.
+          # shellcheck disable=SC1091
+          source reports/checkov/checkov-status.env
+          if [ "${CHECKOV_SCAN_SUCCESS:-false}" != "true" ]; then
+            echo "::error::Checkov execution failed: ${CHECKOV_SCAN_ERROR:-unknown error}"
+            exit 1
           fi
 
   comment-results:
