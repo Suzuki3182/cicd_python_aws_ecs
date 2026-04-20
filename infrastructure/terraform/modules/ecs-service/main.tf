@@ -399,6 +399,17 @@ resource "aws_ecs_task_definition" "app" {
       user                   = "1000"
       readonlyRootFilesystem = true
       privileged             = false
+
+      # Provide a writable tmpfs mount so the non-root process can use /tmp
+      # even with readonlyRootFilesystem = true (e.g. gunicorn worker tmp files)
+      linuxParameters = {
+        tmpfs = [
+          {
+            containerPath = "/tmp"
+            size          = 64
+          }
+        ]
+      }
     }
   ])
 }
