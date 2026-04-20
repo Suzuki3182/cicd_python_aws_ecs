@@ -141,8 +141,6 @@ data "aws_iam_policy_document" "s3_bucket" {
   }
 }
 
-data "aws_caller_identity" "current" {}
-
 # -----------------------------------------------------------
 # Política de ciclo de vida (reduz custos de armazenamento)
 # -----------------------------------------------------------
@@ -208,6 +206,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "main" {
 # Logging de acesso ao bucket
 # -----------------------------------------------------------
 #checkov:skip=CKV_AWS_144:Cross-region replication not required for S3 access log buckets
+#checkov:skip=CKV_AWS_18:Access logs bucket — enabling its own access logs would create a circular dependency
 resource "aws_s3_bucket" "access_logs" {
   bucket = "${var.bucket_name}-access-logs"
 

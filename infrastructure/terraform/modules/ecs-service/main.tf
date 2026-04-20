@@ -395,6 +395,10 @@ resource "aws_ecs_task_definition" "app" {
         retries     = 3
         startPeriod = 60
       }
+
+      user                   = "1000"
+      readonlyRootFilesystem = true
+      privileged             = false
     }
   ])
 }
