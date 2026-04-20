@@ -9,6 +9,7 @@ if ! command -v openssl >/dev/null 2>&1; then
 fi
 
 THUMBPRINT="$(
+  # Extract the last certificate from the TLS chain (the root CA) and hash it.
   openssl s_client -servername "$HOST" -connect "$HOST:443" -showcerts </dev/null 2>/dev/null \
     | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/{print}' \
     | awk 'BEGIN {cert=""} /BEGIN CERTIFICATE/ {cert=$0 ORS; next} /END CERTIFICATE/ {cert=cert $0 ORS; last=cert; next} {cert=cert $0 ORS} END {printf "%s", last}' \

@@ -93,8 +93,11 @@ for secret_name in "${REQUIRED[@]}"; do
   }
 done
 
-bash "$(dirname "${BASH_SOURCE[0]}")/../aws-setup/verify-oidc.sh" \
+if ! bash "$(dirname "${BASH_SOURCE[0]}")/../aws-setup/verify-oidc.sh" \
   --repo "$REPO" \
-  --account-id "$AWS_ACCOUNT_ID"
+  --account-id "$AWS_ACCOUNT_ID"; then
+  echo "OIDC verification failed after setting secrets. Check provider/roles/trust policy setup." >&2
+  exit 1
+fi
 
 echo "GitHub secrets are configured and OIDC setup validation passed."

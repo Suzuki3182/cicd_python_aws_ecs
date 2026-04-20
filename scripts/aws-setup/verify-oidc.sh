@@ -45,7 +45,10 @@ PROVIDER_ARN="arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubuserc
 aws iam get-open-id-connect-provider --open-id-connect-provider-arn "$PROVIDER_ARN" >/dev/null
 
 for role in GitHubActions-Deploy GitHubActions-ReadOnly GitHubActions-SecretsRotation; do
-  TRUST_JSON="$(aws iam get-role --role-name "$role" --query 'Role.AssumeRolePolicyDocument' --output json)"
+  if ! TRUST_JSON="$(aws iam get-role --role-name "$role" --query 'Role.AssumeRolePolicyDocument' --output json 2>/dev/null)"; then
+    echo "Required IAM role is missing: ${role}" >&2
+    exit 1
+  fi
   echo "$TRUST_JSON" | grep -q "repo:${REPO}:\\*" || {
     echo "Role ${role} trust policy does not include repo:${REPO}:*" >&2
     exit 1

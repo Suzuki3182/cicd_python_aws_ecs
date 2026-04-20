@@ -6,19 +6,19 @@ This repository uses AWS OIDC federation for GitHub Actions role assumption.
 
 - AWS CLI configured with IAM permissions to manage IAM OIDC providers/roles
 - GitHub CLI authenticated (`gh auth login`)
-- Repository access to `Suzuki3182/cicd_python_aws_ecs`
+- Repository access to `<OWNER>/<REPO>`
 
 ## 2) Create or update GitHub OIDC provider
 
 ```bash
-cd /home/runner/work/cicd_python_aws_ecs/cicd_python_aws_ecs
+cd <repo-root>
 bash scripts/aws-setup/setup-oidc-provider.sh
 ```
 
 ## 3) Create or update IAM roles for workflows
 
 ```bash
-bash scripts/aws-setup/setup-iam-roles.sh --repo Suzuki3182/cicd_python_aws_ecs
+bash scripts/aws-setup/setup-iam-roles.sh --repo <OWNER>/<REPO>
 ```
 
 Roles created/updated:
@@ -35,7 +35,7 @@ export STAGING_URL=https://staging.example.com
 export PROD_URL=https://prod.example.com
 export ECR_REGISTRY=123456789012.dkr.ecr.us-east-1.amazonaws.com
 
-bash scripts/github-setup/setup-secrets.sh --repo Suzuki3182/cicd_python_aws_ecs
+bash scripts/github-setup/setup-secrets.sh --repo <OWNER>/<REPO>
 ```
 
 Required secrets:
@@ -48,7 +48,7 @@ Required secrets:
 ## 5) Verify OIDC trust + role configuration
 
 ```bash
-bash scripts/aws-setup/verify-oidc.sh --repo Suzuki3182/cicd_python_aws_ecs
+bash scripts/aws-setup/verify-oidc.sh --repo <OWNER>/<REPO>
 ```
 
 If verification passes, workflows can assume AWS roles using:

@@ -20,22 +20,22 @@
    - `GitHubActions-Deploy`
    - `GitHubActions-ReadOnly`
    - `GitHubActions-SecretsRotation`
-4. Verify trust policy includes `repo:Suzuki3182/cicd_python_aws_ecs:*`.
+4. Verify trust policy includes `repo:<OWNER>/<REPO>:*`.
 
 ## Fast recovery commands
 
 ```bash
-cd /home/runner/work/cicd_python_aws_ecs/cicd_python_aws_ecs
+cd <repo-root>
 bash scripts/aws-setup/setup-oidc-provider.sh
-bash scripts/aws-setup/setup-iam-roles.sh --repo Suzuki3182/cicd_python_aws_ecs
-bash scripts/github-setup/setup-secrets.sh --repo Suzuki3182/cicd_python_aws_ecs
+bash scripts/aws-setup/setup-iam-roles.sh --repo <OWNER>/<REPO>
+bash scripts/github-setup/setup-secrets.sh --repo <OWNER>/<REPO>
 ```
 
 ## Validation commands
 
 ```bash
-bash scripts/aws-setup/verify-oidc.sh --repo Suzuki3182/cicd_python_aws_ecs
-gh secret list --repo Suzuki3182/cicd_python_aws_ecs
+bash scripts/aws-setup/verify-oidc.sh --repo <OWNER>/<REPO>
+gh secret list --repo <OWNER>/<REPO>
 ```
 
 ## Other common failures
