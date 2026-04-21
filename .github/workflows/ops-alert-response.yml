@@ -1,0 +1,156 @@
+name: Ops Alert Response
+
+on:
+  workflow_dispatch:
+    inputs:
+      incident_type:
+        description: "Incident type"
+        type: choice
+        options:
+          - ecs_task_failure
+          - terraform_apply_failure
+          - drift_detected
+          - security_gate_failure
+        required: true
+      environment:
+        description: "Environment"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: staging
+        required: true
+      cluster_name:
+        description: "ECS cluster name (required for ecs_task_failure)"
+        required: false
+      extra_context:
+        description: "Optional notes"
+        required: false
+  repository_dispatch:
+    types:
+      - ecs_task_failure
+      - terraform_apply_failure
+      - drift_detected
+      - security_gate_failure
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  respond:
+    name: Execute Runbook
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Resolve incident payload
+        id: payload
+        run: |
+          TYPE="${{ github.event.inputs.incident_type }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+          CLUSTER="${{ github.event.inputs.cluster_name }}"
+          NOTES="${{ github.event.inputs.extra_context }}"
+
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            TYPE="${{ github.event.action }}"
+            ENVIRONMENT="${{ github.event.client_payload.environment }}"
+            CLUSTER="${{ github.event.client_payload.cluster_name }}"
+            NOTES="${{ github.event.client_payload.extra_context }}"
+          fi
+
+          if [ -z "$ENVIRONMENT" ]; then
+            ENVIRONMENT="staging"
+          fi
+
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "cluster=$CLUSTER" >> "$GITHUB_OUTPUT"
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/GitHubActions-Deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.6.0"
+
+      - name: Execute incident runbook
+        run: |
+          TYPE="${{ steps.payload.outputs.type }}"
+          ENVIRONMENT="${{ steps.payload.outputs.environment }}"
+          CLUSTER="${{ steps.payload.outputs.cluster }}"
+
+          echo "Incident: $TYPE"
+          echo "Environment: $ENVIRONMENT"
+
+          case "$TYPE" in
+            ecs_task_failure)
+              if [ -z "$CLUSTER" ]; then
+                echo "cluster_name is required for ecs_task_failure" >&2
+                exit 1
+              fi
+              bash scripts/auto-rollback.sh --env="$ENVIRONMENT" --cluster="$CLUSTER"
+              ;;
+            terraform_apply_failure)
+              cd infrastructure/terraform
+              terraform init
+              terraform workspace select "$ENVIRONMENT" || terraform workspace new "$ENVIRONMENT"
+              terraform plan -var-file="environments/$ENVIRONMENT.tfvars" -no-color
+              ;;
+            drift_detected)
+              cd infrastructure/terraform
+              terraform init
+              terraform workspace select "$ENVIRONMENT" || terraform workspace new "$ENVIRONMENT"
+              terraform plan -var-file="environments/$ENVIRONMENT.tfvars" -detailed-exitcode -no-color || true
+              ;;
+            security_gate_failure)
+              bash scripts/validate-iac.sh
+              ;;
+            *)
+              echo "Unsupported incident type: $TYPE" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Open incident record issue
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          INCIDENT_TYPE: ${{ steps.payload.outputs.type }}
+          INCIDENT_ENV: ${{ steps.payload.outputs.environment }}
+          INCIDENT_NOTES: ${{ steps.payload.outputs.notes }}
+        with:
+          script: |
+            const title = `[Ops] ${process.env.INCIDENT_TYPE} in ${process.env.INCIDENT_ENV}`;
+            const body = [
+              '## Automated Runbook Execution',
+              '',
+              `- Incident type: ${process.env.INCIDENT_TYPE}`,
+              `- Environment: ${process.env.INCIDENT_ENV}`,
+              `- Trigger: ${context.eventName}`,
+              `- Workflow run: ${process.env.GITHUB_SERVER_URL}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              '### Extra context',
+              process.env.INCIDENT_NOTES || '(none)'
+            ].join('\n');
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ['ops', 'incident', process.env.INCIDENT_ENV]
+            });

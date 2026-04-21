@@ -14,8 +14,25 @@ env:
   TERRAFORM_VERSION: "1.6.0"
 
 jobs:
+  resolve-targets:
+    name: Resolve Target Environments
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.resolve.outputs.environments }}
+    steps:
+      - name: Resolve environment list
+        id: resolve
+        run: |
+          TARGET="${{ github.event.inputs.environment }}"
+          if [ -z "$TARGET" ] || [ "$TARGET" = "all" ]; then
+            echo 'environments=["dev","staging","prod"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "environments=[\"$TARGET\"]" >> "$GITHUB_OUTPUT"
+          fi
+
   detect-drift:
     name: Terraform Plan — ${{ matrix.environment }}
+    needs: resolve-targets
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -23,7 +40,7 @@ jobs:
       pull-requests: write
     strategy:
       matrix:
-        environment: [dev, staging, prod]
+        environment: ${{ fromJson(needs.resolve-targets.outputs.environments) }}
       fail-fast: false
 
     steps:
