@@ -1,13 +1,13 @@
-FROM python:3.12-slim-bookworm AS base
+FROM python:3.12-alpine3.21 AS base
 
 # Security: run as non-root
-RUN groupadd --gid 1001 app && \
-    useradd --uid 1001 --gid app --shell /bin/bash --create-home app
+RUN addgroup -g 1001 app && \
+  adduser -D -u 1001 -G app app
 
 WORKDIR /app
 
 # Apply OS security patches
-RUN apt-get update && apt-get upgrade -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
+RUN apk upgrade --no-cache
 
 # Install dependencies first (layer cache)
 COPY app/requirements.txt .
@@ -15,9 +15,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application source
 COPY app/ .
+COPY entrypoint.sh /app/entrypoint.sh
 
 # Remove write permissions from app code
-RUN chmod -R a-w /app && chown -R app:app /app
+RUN chmod +x /app/entrypoint.sh && \
+  chmod -R a-w /app && \
+  chown -R app:app /app
 
 USER app
 

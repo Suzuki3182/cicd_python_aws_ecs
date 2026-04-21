@@ -69,6 +69,7 @@ resource "aws_iam_role_policy" "task_s3" {
   name = "s3-access"
   role = aws_iam_role.task.id
 
+  #tfsec:ignore:aws-iam-no-policy-wildcards Task requires object-level access under the provisioned application bucket.
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
