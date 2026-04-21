@@ -87,6 +87,14 @@ jobs:
         with:
           terraform_version: "1.6.0"
 
+      - name: Install security tooling
+        if: steps.payload.outputs.type == 'security_gate_failure'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | sudo bash
+          python -m pip install checkov
+
       - name: Execute incident runbook
         run: |
           TYPE="${{ steps.payload.outputs.type }}"
